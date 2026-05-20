@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "ZenSearch",
+  "version": "1.2.0",
+  "description": "Fast fuzzy tab, bookmark & history search for Zen Browser.",
+  "permissions": [
+    "tabs",
+    "<all_urls>",
+    "tabGroups",
+    "bookmarks",
+    "history",
+    "sessions",
+    "windows"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "zensearch@extension",
+      "strict_min_version": "115.0"
+    }
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ],
+  "commands": {
+    "open-zensearch": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space",
+        "mac": "Command+Shift+Space"
+      },
+      "description": "Open ZenSearch overlay"
+    }
+  },
+  "action": {
+    "default_title": "ZenSearch",
+    "default_icon": {
+      "48": "icons/icon-48.png"
+    }
+  },
+  "icons": {
+    "48": "icons/icon-48.png"
+  }
+}
