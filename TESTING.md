@@ -50,7 +50,10 @@ Added September 17, 2026. Exercised in headless Chromium against the real `panel
 - Filtering by one space, stacking a second pill, dropping a pill, and clearing through **All spaces** and Alt+0.
 - Double-clicking a pill narrowing to that space alone, both from one lit pill and from two.
 - Pills holding the browser's workspace order while recency reorders the results.
-- Alt+Shift+1 … 9 toggling pills, and Alt+1 … 5 reaching the five remaining modes.
+- Alt+1 … 9 filtering to one space in pill order, Alt+0 returning to all, Alt+← / Alt+→ walking the pills and wrapping at both ends, and Alt+1 … 9 on an empty slot reporting it rather than changing the filter.
+- Alt+Enter switching to a single filtered space and dismissing; with none or several filtered it says what to do instead.
+- Alt+A, Alt+T, Alt+B, Alt+W, Alt+L reaching the five modes, with the letters shown on the buttons.
+- Typing unaffected by the Alt handlers.
 - Ctrl+click on a pill issuing `switchWorkspace` for the right window and workspace, then dismissing.
 - Pill counts, mode counts, and the result list following both the query and the filter.
 - Pills shown for All, Tabs, and Active; hidden for Bookmarks and Windows, and hidden entirely when workspaces are unavailable.
@@ -73,7 +76,11 @@ Measured in the same harness with 900 tabs, 4,000 bookmarks, and 6 spaces, under
 
 These are throttled headless Chromium numbers on fixture data, not Zen measurements, and they compare relative cost rather than claiming absolute latency.
 
-A live Zen run is still needed for real container identities, real workspace icons, and Ctrl+click actually switching the browser.
+## Packaging
+
+`./build.sh` was run in both of its paths, with `zip` and with the `python3` fallback. Each produced a valid archive with `manifest.json` at the root, the `experiments/` folder intact, and the manifest version matching the filename. The archive was not installed into a browser from here.
+
+A live Zen run is still needed for real container identities, real workspace icons, Ctrl+click and Alt+Enter actually switching the browser, installing the packaged `.xpi`, and confirming that Alt+B and Alt+T are not taken by the Firefox menu bar.
 
 ## Remaining platform coverage
 

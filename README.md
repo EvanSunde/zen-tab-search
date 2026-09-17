@@ -6,16 +6,23 @@ A small, local command palette for Zen Browser. Press **Ctrl + Shift + Space** t
 
 This edition uses a narrow Firefox Experiment API for actual Zen workspaces. It is an unsigned, locally built extension; ordinary Firefox Add-ons signing does not support Experiment APIs.
 
-1. Open `about:config` in Zen.
-2. Set `extensions.experiments.enabled` to `true`.
-3. Set `xpinstall.signatures.required` to `false`.
-4. Restart Zen if needed.
-5. Open `about:addons`, choose the gear menu → **Install Add-on From File**, and select `zen-glass-1.2.0.xpi`.
-6. Press **Ctrl + Shift + Space** on a website.
+1. Build the package:
+
+        ./build.sh
+
+   It writes `zen-glass-<version>.xpi` next to the sources — a plain zip with `manifest.json` at its root. The script needs a shell and either `zip` or `python3`, and there is nothing to install first.
+2. Open `about:config` in Zen.
+3. Set `extensions.experiments.enabled` to `true`.
+4. Set `xpinstall.signatures.required` to `false`.
+5. Restart Zen if needed.
+6. Open `about:addons`, choose the gear menu → **Install Add-on From File**, and select the `.xpi` the script wrote.
+7. Press **Ctrl + Shift + Space** on a website.
 
 These settings permit unsigned, privileged extensions. Only install packages you trust. Installation and settings changes are left to you; the build does not change your existing browser profile. No native companion application is required.
 
-For a temporary development installation, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select this folder's `manifest.json` after enabling Experiment APIs. Temporary installations disappear when Zen exits.
+If the install is refused as unsigned, that build enforces signatures regardless of the pref — ordinary release Firefox does, and some Zen builds may. Nothing in the package can work around that; the temporary installation below is then the only route, as an add-on signed for general distribution cannot carry an Experiment API.
+
+For a temporary development installation, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select this folder's `manifest.json` after enabling Experiment APIs. Temporary installations disappear when Zen exits, which the packaged install above avoids.
 
 If another extension uses the shortcut, change its binding or this extension's binding in `about:addons` → gear menu → **Manage Extension Shortcuts**. On macOS the default is literal Control + Shift + Space.
 
@@ -23,13 +30,13 @@ If another extension uses the shortcut, change its binding or this extension's b
 
 Type naturally. There is no need to prefix a search with “tabs” or “bookmarks.” Counts on every mode update with your query. Fuzzy matching handles missing letters, one-character spelling errors, transposed letters, and accents. Matches are ordered by **last use**, including fuzzy matches; unknown recency falls back to alphabetical order.
 
-- **Alt+1:** All
-- **Alt+2:** Tabs
-- **Alt+3:** Bookmarks
-- **Alt+4:** Windows
-- **Alt+5:** Active tabs (selected tabs in each window, distinct from loaded tabs)
-- **Alt+Shift+1 … 9:** Add or drop that space pill
-- **Alt+0:** Clear the space filter
+Digits belong to your spaces and letters to the modes, so the keys that change most often are the ones you count on your fingers:
+
+- **Alt+1 … 9:** Filter to that space, alone
+- **Alt+← / Alt+→:** Walk to the space beside it, wrapping at either end
+- **Alt+0:** Back to all spaces
+- **Alt+Enter:** Switch the browser to the space you are filtered to, and close
+- **Alt+A:** All · **Alt+T:** Tabs · **Alt+B:** Bookmarks · **Alt+W:** Windows · **Alt+L:** Active, which is every loaded tab
 - **↑ / ↓, Page Up / Page Down:** Select a result
 - **Enter:** Open or switch
 - **Ctrl+Enter:** Open a bookmark in the background
@@ -48,9 +55,9 @@ Bookmarks can be opened, opened in the background, edited, or deleted. Bookmark 
 Spaces are not a separate mode. They are colour-coded pills below the mode row, shown for All, Tabs, and Active:
 
 - **Click** a pill to filter tabs by that space. Click further pills to widen the filter; click a lit pill to drop it again.
-- **Double-click** a pill to narrow to that space alone, whatever else was lit.
-- **Ctrl+click** a pill to switch the browser to that space.
-- The current space is selected when the palette opens, so you start inside the space you are already in. **All spaces** or Alt+0 clears the filter. The pills are the only readout of the filter; nothing repeats it below.
+- **Double-click** a pill to narrow to that space alone, whatever else was lit. **Alt+1 … 9** does the same from the keyboard, in pill order, and **Alt+← / Alt+→** steps between them.
+- **Ctrl+click** a pill to switch the browser to that space; **Alt+Enter** does it for the space you are filtered to. So `Alt+3` then `Alt+Enter` lands you in the third space.
+- The current space is selected when the palette opens, so you start inside the space you are already in. **All spaces** or Alt+0 clears the filter. Stacking several spaces is a mouse gesture; the keyboard always lands on exactly one. The pills are the only readout of the filter; nothing repeats it below.
 - Pills keep the browser's own space order. Counts follow whatever you have typed, a ring around a pill's dot marks the space the browser is showing now, and a space's own Zen icon replaces the dot when it has one.
 
 Each tab row tags its space in that space's colour, so a widened filter still reads at a glance. Where a space or a tab uses a Firefox container, the tag carries the container's own name and colour; a space named after its container is tagged once, not twice. Zen's shared Essentials are tagged as such and stay visible under every space filter. Colours come from the container when there is one, and are otherwise derived from the space's identity, so they do not shift between sessions.
@@ -97,7 +104,9 @@ Opening a bookmark supports HTTP, HTTPS, FTP, and file URLs, subject to browser 
 
 ## Source and tests
 
-No build step and no runtime dependencies. The packaged JavaScript, HTML, and CSS are the source.
+No bundler, transpiler, or runtime dependencies: the packaged JavaScript, HTML, and CSS are the source, and `build.sh` only zips them.
+
+On Windows and Linux, Alt+B and Alt+T also reach Firefox's Bookmarks and Tools menus when the menu bar is showing. The palette claims the keystroke first while it is open.
 
 Run the pure search tests, including the space-filter cases, with:
 

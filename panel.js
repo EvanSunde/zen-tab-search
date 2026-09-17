@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id),keyOf=i=>`${i.kind}:${i.windowId ?? ''}:${i.id}`;
 if(location.hash.startsWith('#overlay'))document.body.classList.add('overlay');
 const overlay=location.hash.startsWith('#overlay');
-const modes=[['all','All'],['tabs','Tabs'],['bookmarks','Bookmarks'],['windows','Windows'],['active','Active']];
+const modes=[['all','All','A'],['tabs','Tabs','T'],['bookmarks','Bookmarks','B'],['windows','Windows','W'],['active','Active','L']];
 const icons={tabs:'▱',bookmarks:'☆',windows:'▣',workspaces:'◈',commands:'›'};
 let items=[],mode='tabs',visible=[],selected=0,limit=60,commandTarget=null,workspaceSupported=false;
 const spaceKeys=new Set();let spacesReady=false;
@@ -25,9 +25,9 @@ function itemFor(key){return items.find(i=>keyOf(i)===key);}
 async function dismiss(){await rpc('dismiss').catch(()=>{});if(!overlay)window.close();}
 function shortURL(url){try{const u=new URL(url);return u.hostname+(u.pathname==='/'?'':u.pathname);}catch{return url || '';}}
 function prepare(i){return ZenSearch.prepare(i);}
-for(const [index,[key,label]] of modes.entries()){
-  const b=node('button','mode');b.type='button';b.setAttribute('aria-pressed',String(mode===key));b.title=`${label} · Alt+${index+1}${key==='active'?' · All loaded tabs':''}`;
-  b.append(node('span','',label),node('span','count','…'),node('small','',index+1));b.onclick=()=>setMode(key);modeButtons.set(key,b);$('modes').append(b);
+for(const [key,label,letter] of modes){
+  const b=node('button','mode');b.type='button';b.setAttribute('aria-pressed',String(mode===key));b.title=`${label} · Alt+${letter}${key==='active'?' · All loaded tabs':''}`;
+  b.append(node('span','',label),node('span','count','…'),node('small','',letter));b.onclick=()=>setMode(key);modeButtons.set(key,b);$('modes').append(b);
 }
 function viewMatches(i,key){return key==='all'?i.kind!=='workspaces':key==='active'?i.kind==='tabs'&&!i.discarded:i.kind===key;}
 function render({preserve=false}={}){
@@ -78,11 +78,22 @@ function glyph(name){const svg=document.createElementNS(SVGNS,'svg');svg.setAttr
 /* Spaces are pills, not a mode: they stack into one filter, and Ctrl+click switches. */
 function selectedSpaces(){return spaceKeys.size?spaceItems.filter(i=>spaceKeys.has(keyOf(i))):[];}
 function allSpaceItems(){return spaceItems;}
-function filterChanged(){selected=0;limit=60;chosen.clear();anchor=null;render();$('results').scrollTop=0;}
+function filterChanged(){selected=0;limit=60;chosen.clear();anchor=null;status('');render();$('results').scrollTop=0;}
 function toggleSpace(space){const key=keyOf(space);spaceKeys.has(key)?spaceKeys.delete(key):spaceKeys.add(key);filterChanged();}
 function onlySpace(space){spaceKeys.clear();spaceKeys.add(keyOf(space));filterChanged();}
 async function switchSpace(space){try{await rpc('switchWorkspace',{id:space.id,windowId:space.windowId});await dismiss();}catch(e){status(e.message,true);}}
 function clearSpaces(){if(!spaceKeys.size)return;spaceKeys.clear();filterChanged();}
+// Walking the pills left or right always lands on one space, wrapping at either end.
+function stepSpace(delta){
+  if(!spaceItems.length)return;
+  const at=spaceItems.findIndex(w=>spaceKeys.has(keyOf(w)));
+  onlySpace(spaceItems[at<0?(delta>0?0:spaceItems.length-1):(at+delta+spaceItems.length)%spaceItems.length]);
+}
+function switchToFiltered(){
+  const picked=selectedSpaces();
+  if(picked.length===1)return switchSpace(picked[0]);
+  status(picked.length?'Narrow to a single space before switching to it.':'Pick a space first with Alt+1…9 or Alt+← / Alt+→.');
+}
 function initSpaces(){
   if(spacesReady||!workspaceSupported)return;spacesReady=true;
   const focused=items.find(i=>i.kind==='windows'&&i.active)?.id,live=allSpaceItems().filter(w=>w.active);
@@ -111,7 +122,7 @@ function renderSpaces(counts){
     pill.querySelector('.pill-count').textContent=String(counts.get(space.windowId+':'+space.id) || 0);
     pill.title=[space.title,manyWindows?`Window ${space.windowId}`:'',space.active?'Current space':'',space.containerName?`Container ${space.containerName}`:'',
       on?'Click to drop from the filter':'Click to add to the filter','Double-click for this space alone','Ctrl+click switches to it',
-      index<9?`Alt+Shift+${index+1}`:''].filter(Boolean).join(' · ');
+      index<9?`Alt+${index+1}`:''].filter(Boolean).join(' · ');
   });
   wanted.forEach((el,index)=>{if(bar.children[index]!==el)bar.insertBefore(el,bar.children[index] || null);});
   for(const [key,pill] of pillCache)if(!list.some(w=>keyOf(w)===key)){pill.remove();pillCache.delete(key);}
@@ -282,7 +293,7 @@ function drawDetails(){const t=itemFor(side.keys[0]);detail('Tab details');if(!t
 function syncSide(){if(!side||busy)return;const scroll=$('detail').scrollTop,focus=document.activeElement?.dataset.action;if(side.type==='actions')drawActions();else if(side.type==='details')drawDetails();$('detail').scrollTop=scroll;if(focus)$('detail').querySelector(`[data-action="${focus}"]:not(:disabled)`)?.focus();}
 function chooseMove(tab,kind){side={type:'form'};detail(kind==='workspaces'?'Move to workspace':'Move to window');const targets=items.filter(i=>i.kind===kind&&(kind==='workspaces'?i.windowId===tab.windowId&&i.id!==tab.workspaceId:i.id!==tab.windowId));if(!targets.length)$('detail').append(node('p','','No other destinations available.'));for(const t of targets)addAction(t.title,()=>perform(kind==='workspaces'?'moveWorkspace':'moveWindow',{tabId:tab.id,id:t.id},'Tab moved.'));addAction('Back',()=>showActions(tab));focusAction();}
 function editBookmark(item){side={type:'form'};detail('Edit bookmark');const name=node('input'),url=node('input');name.id='edit-title';url.id='edit-url';name.value=item.title;url.value=item.url;const a=node('label','','Title'),b=node('label','','URL');a.htmlFor=name.id;b.htmlFor=url.id;$('detail').append(a,name,b,url);addAction('Save bookmark',()=>perform('editBookmark',{id:item.id,title:name.value,url:url.value},'Bookmark updated.'));addAction('Cancel',()=>showActions(item));name.focus();}
-function showHelp(){side={type:'help'};detail('Keyboard guide');for(const text of ['Tabs opens by default. Type to fuzzy-search; each mode shows its matching count. Results stay in last-used order.','Alt+1 All · 2 Tabs · 3 Bookmarks · 4 Windows · 5 Active. Active includes every loaded tab.','Spaces are the colour-coded pills under the modes, shown for All, Tabs and Active. Click one to filter by it, click more to widen the filter, click again to drop it. The current space is picked for you when the palette opens.','Double-click a pill to narrow to that space alone. Ctrl+click switches the browser to that space. Alt+Shift+1…9 toggles a pill and Alt+0 clears the filter.','Each tab row tags its space, or its container, in that space\u2019s colour. Shared Essentials are tagged as such and stay visible in every filter.','A pinned tab always shows its pin. The other buttons — pin, unload, close — appear on the row under the pointer or the cursor, and a button that cannot act is left out instead of greyed out.','↑ / ↓ navigate. Shift + ↑ / ↓ extends or shrinks a range of selected tabs. Ctrl-click toggles a tab; Shift-click selects a range.','Right-click, •••, or Ctrl+K opens actions on the right. Pin, unpin, unload or close multiple selected tabs together.','Ctrl+Enter on a single tab opens its details without switching or reloading it. Enter switches to the tab. Ctrl+Enter on a bookmark opens it in the background.','Commands are optional: > pin, > unpin, > unload, > close, > move, > bookmark, > restore.','Unloading never activates a tab. Current tabs are skipped. In Active mode, unloaded tabs disappear because they are no longer loaded. Your search and scroll position are retained.'])$('detail').append(node('p','',text));}
+function showHelp(){side={type:'help'};detail('Keyboard guide');for(const text of ['Tabs opens by default. Type to fuzzy-search; each mode shows its matching count. Results stay in last-used order.','Modes take letters: Alt+A All · Alt+T Tabs · Alt+B Bookmarks · Alt+W Windows · Alt+L Active, which is every loaded tab.','Spaces are the colour-coded pills under the modes, shown for All, Tabs and Active. Click one to filter by it, click more to widen the filter, click again to drop it. The current space is picked for you when the palette opens.','Digits belong to the spaces: Alt+1…9 filters to that pill alone, Alt+← and Alt+→ walk to the space beside it, and Alt+0 goes back to all of them.','Alt+Enter switches the browser to the space you are filtered to and closes the palette — so Alt+3 then Alt+Enter lands you in the third space. Double-click or Ctrl+click a pill does the same with the mouse.','Each tab row tags its space, or its container, in that space\u2019s colour. Shared Essentials are tagged as such and stay visible in every filter.','A pinned tab always shows its pin. The other buttons — pin, unload, close — appear on the row under the pointer or the cursor, and a button that cannot act is left out instead of greyed out.','↑ / ↓ navigate. Shift + ↑ / ↓ extends or shrinks a range of selected tabs. Ctrl-click toggles a tab; Shift-click selects a range.','Right-click, •••, or Ctrl+K opens actions on the right. Pin, unpin, unload or close multiple selected tabs together.','Ctrl+Enter on a single tab opens its details without switching or reloading it. Enter switches to the tab. Ctrl+Enter on a bookmark opens it in the background.','Commands are optional: > pin, > unpin, > unload, > close, > move, > bookmark, > restore.','Unloading never activates a tab. Current tabs are skipped. In Active mode, unloaded tabs disappear because they are no longer loaded. Your search and scroll position are retained.'])$('detail').append(node('p','',text));}
 function cmd(id,title,run){return prepare({kind:'commands',id,title,subtitle:'Command · Enter to run',run});}
 function commands(){const t=commandTarget || current(),targets=t?.kind==='tabs'?targetsFor(t):[];const list=[cmd('help','Help — keyboard shortcuts',showHelp),cmd('bookmark','Bookmark current page',()=>perform('bookmarkCurrent',{},'Bookmark saved.')),cmd('unload-others','Unload other tabs',()=>perform('unloadOthers',{},'Other eligible tabs unloaded.')),cmd('restore','Restore last closed tab',()=>perform('restore',{},'Restored.'))];if(t?.kind==='tabs'){for(const [action,label] of [['pin','Pin'],['unpin','Unpin'],['unload','Unload'],['close','Close']])list.unshift(cmd(action,`${label} — ${targets.length>1?targets.length+' tabs':t.title}`,()=>mutate(action,targets)));list.push(cmd('details',`Details — ${t.title}`,()=>showDetails(t)));}for(const w of items.filter(i=>i.kind==='workspaces')){list.push(cmd('switch:'+w.windowId+':'+w.id,`Switch workspace ${w.title}`,async()=>{await rpc('switchWorkspace',{id:w.id,windowId:w.windowId});await dismiss();}));if(t?.kind==='tabs'&&!t.essential&&w.windowId===t.windowId&&w.id!==t.workspaceId)list.push(cmd('move:'+w.id,`Move to workspace ${w.title}`,()=>perform('moveWorkspace',{tabId:t.id,id:w.id},'Tab moved.')));}return list;}
 $('query').addEventListener('input',()=>{if($('query').value.trimStart().startsWith('>')){if(!commandTarget)commandTarget=current()?.kind==='tabs'?current():items.find(i=>i.kind==='tabs'&&i.active);}else commandTarget=null;chosen.clear();anchor=null;selected=0;limit=60;closeSide();status('');scheduleRender(true);});
@@ -291,9 +302,15 @@ document.addEventListener('keydown',e=>{
   // Typing and backspacing never read the list, so they keep their coalesced render.
   const editing=e.target===$('query')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete');
   if(!editing)flushRender();
-  if(e.altKey&&e.shiftKey&&/^Digit[1-9]$/.test(e.code)){e.preventDefault();const space=allSpaceItems()[Number(e.code.slice(5))-1];if(space)toggleSpace(space);return;}
-  if(e.altKey&&e.code==='Digit0'){e.preventDefault();clearSpaces();return;}
-  if(e.altKey&&!e.shiftKey&&/^[1-5]$/.test(e.key)){e.preventDefault();setMode(modes[Number(e.key)-1][0]);return;}
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey){
+    if(/^Digit[1-9]$/.test(e.code)){e.preventDefault();const space=spaceItems[Number(e.code.slice(5))-1];
+      if(space)onlySpace(space);else status(`There is no space ${e.code.slice(5)}.`);return;}
+    if(e.code==='Digit0'){e.preventDefault();clearSpaces();return;}
+    if(e.code==='ArrowRight'||e.code==='ArrowLeft'){e.preventDefault();stepSpace(e.code==='ArrowRight'?1:-1);return;}
+    if(e.code==='Enter'||e.code==='NumpadEnter'){e.preventDefault();switchToFiltered();return;}
+    const picked=modes.find(([,,letter])=>e.code==='Key'+letter);
+    if(picked){e.preventDefault();setMode(picked[0]);return;}
+  }
   if(e.ctrlKey&&e.shiftKey&&e.code==='Space'){e.preventDefault();dismiss();return;}
   if(e.key==='Escape'){e.preventDefault();if(side){closeSide();$('query').focus();}else if(chosen.size>1){chosen.clear();anchor=null;render();}else dismiss();return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();if(current()&&current().kind!=='commands')showActions(current());return;}
