@@ -29,3 +29,11 @@ test('inSpaces leaves non-tab records alone',()=>{
   assert.equal(S.inSpaces(spaced[2],[{id:'a',windowId:1}]),false);
   assert.equal(S.inSpaces(spaced[1],[{id:'b',windowId:9}]),true);
 });
+
+test('records carry a pre-split word list',()=>assert.deepEqual(records[0].words,['github','issues','https','github','com']));
+test('a pre-sorted collection skips the sort and keeps its order',()=>{
+  const ordered=[...records].sort(S.compare);
+  assert.deepEqual(S.search(ordered,'','',{sorted:true}).map(x=>x.id),ordered.map(x=>x.id));
+  assert.deepEqual(S.search(ordered,'gthb',null,{sorted:true}).map(x=>x.id),[3,'2',1]);
+});
+test('typo matching still works without a cached word list',()=>assert.equal(S.tokenMatch('githbu','github docs'),true));

@@ -50,8 +50,9 @@ async function snapshot(){
     if(browser.zenGlass)data=await browser.zenGlass.snapshot();
     else {const windows=await browser.windows.getAll({populate:true,windowTypes:['normal']});data={windows,tabs:windows.flatMap(w=>w.tabs || []),workspaces:[],supported:false};}
     const recent=await state(),ids=await containers(),groups=new Map(),byWindow=new Map();
-    const spaces=new Map(data.workspaces.map(w=>{const c=w.containerTabId?ids.get('firefox-container-'+w.containerTabId):null;
-      return [w.windowId+':'+w.id,{...w,color:c?.color || '',containerName:c?.name || ''}];}));
+    // `order` keeps the pills in the browser's own workspace order, whatever recency does.
+    const spaces=new Map(data.workspaces.map((w,index)=>{const c=w.containerTabId?ids.get('firefox-container-'+w.containerTabId):null;
+      return [w.windowId+':'+w.id,{...w,order:index,color:c?.color || '',containerName:c?.name || ''}];}));
     const items=data.tabs.map(t=>{
       const key=t.windowId+':'+t.workspaceId,w=spaces.get(key),c=t.cookieStoreId&&t.cookieStoreId!=='firefox-default'?ids.get(t.cookieStoreId):null;
       if(!groups.has(key))groups.set(key,[]);groups.get(key).push(t);

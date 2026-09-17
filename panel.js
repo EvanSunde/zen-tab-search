@@ -9,7 +9,14 @@ const spaceKeys=new Set();let spacesReady=false;
 let version=0,bookmarkVersion=0,bookmarksReady=false,coreReady=false,anchor=null,side=null,busy=false,refreshTimer;
 let chosen=new Set();
 const rowCache=new Map(),modeButtons=new Map(),pillCache=new Map(),iconCache=new Map(),iconQueue=new Set();
-let iconTimer;
+const rowPool=[];let spaceItems=[],iconTimer,frameHandle=0,frameReset=false;
+// Records stay in `compare` order, so searching a keystroke is a filter, never a sort.
+function setItems(next){items=next;items.sort(ZenSearch.compare);
+  spaceItems=items.filter(i=>i.kind==='workspaces').sort((a,b)=>a.windowId-b.windowId || (a.order||0)-(b.order||0) || a.title.localeCompare(b.title));}
+function scheduleRender(resetScroll){frameReset=frameReset||resetScroll;if(!frameHandle)frameHandle=requestAnimationFrame(runFrame);}
+function runFrame(){frameHandle=0;const reset=frameReset;frameReset=false;render();if(reset)$('results').scrollTop=0;}
+// Anything that reads the result list must see the keystrokes that led to it.
+function flushRender(){if(frameHandle){cancelAnimationFrame(frameHandle);runFrame();}}
 async function rpc(type,args={}){const r=await browser.runtime.sendMessage({type,...args});if(r.error)throw new Error(r.error);return r.data;}
 function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
@@ -25,15 +32,23 @@ for(const [index,[key,label]] of modes.entries()){
 function viewMatches(i,key){return key==='all'?i.kind!=='workspaces':key==='active'?i.kind==='tabs'&&!i.discarded:i.kind===key;}
 function render({preserve=false}={}){
   const previous=current(),scroll=$('results').scrollTop,q=$('query').value,isCommand=q.trimStart().startsWith('>');
-  const found=ZenSearch.search(items,isCommand?'':q),spaces=selectedSpaces(),matches=spaces.length?found.filter(i=>ZenSearch.inSpaces(i,spaces)):found;
-  for(const [key,b] of modeButtons){const count=matches.filter(i=>viewMatches(i,key)).length;b.querySelector('.count').textContent=key==='bookmarks'&&!bookmarksReady?'…':String(count);b.setAttribute('aria-pressed',String(mode===key));}
-  visible=isCommand?ZenSearch.search(commands(),q.trimStart().slice(1)):matches.filter(i=>viewMatches(i,mode));
+  const found=ZenSearch.search(items,isCommand?'':q,null,{sorted:true}),spaces=selectedSpaces();
+  const counts={all:0,tabs:0,bookmarks:0,windows:0,active:0},spaceCounts=new Map(),shown=[];
+  for(const i of found){
+    if(i.kind==='tabs'&&!i.essential){const k=i.windowId+':'+i.workspaceId;spaceCounts.set(k,(spaceCounts.get(k)||0)+1);}
+    if(spaces.length&&!ZenSearch.inSpaces(i,spaces))continue;
+    if(i.kind==='tabs'){counts.tabs++;counts.all++;if(!i.discarded)counts.active++;}
+    else if(i.kind==='bookmarks'){counts.bookmarks++;counts.all++;}
+    else if(i.kind==='windows'){counts.windows++;counts.all++;}
+    if(!isCommand&&viewMatches(i,mode))shown.push(i);
+  }
+  for(const [key,b] of modeButtons){b.querySelector('.count').textContent=key==='bookmarks'&&!bookmarksReady?'…':String(counts[key]);b.setAttribute('aria-pressed',String(mode===key));}
+  visible=isCommand?ZenSearch.search(commands(),q.trimStart().slice(1)):shown;
   if(preserve&&previous){const index=visible.findIndex(i=>keyOf(i)===keyOf(previous));if(index>=0)selected=index;}
   selected=Math.max(0,Math.min(selected,visible.length-1));
   const keys=new Set(visible.map(keyOf));chosen=new Set([...chosen].filter(k=>keys.has(k)));
   if(anchor&&!keys.has(anchor))anchor=null;
-  renderSpaces(found);updateSummary();
-  $('scope').hidden=!spaces.length;$('scope').textContent=spaces.length?`${spaces.map(s=>s.title).join(' · ')} ×`:'';
+  renderSpaces(spaceCounts);updateSummary();
   $('results').hidden=!visible.length;$('empty').hidden=!!visible.length;
   const h=$('empty').querySelector('h2'),p=$('empty').querySelector('p');
   if(!coreReady || (mode==='bookmarks'&&!bookmarksReady)){h.textContent='Loading…';p.textContent='';}
@@ -61,10 +76,11 @@ const glyphs={pin:['M9.6 3h4.8l-.7 5.1 2.8 2.7v1.5H7.5v-1.5l2.8-2.7L9.6 3Z','M12
 function glyph(name){const svg=document.createElementNS(SVGNS,'svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
   for(const d of glyphs[name]){const path=document.createElementNS(SVGNS,'path');path.setAttribute('d',d);svg.append(path);}return svg;}
 /* Spaces are pills, not a mode: they stack into one filter, and Ctrl+click switches. */
-function selectedSpaces(){return items.filter(i=>i.kind==='workspaces'&&spaceKeys.has(keyOf(i)));}
-function allSpaceItems(){return items.filter(i=>i.kind==='workspaces');}
+function selectedSpaces(){return spaceKeys.size?spaceItems.filter(i=>spaceKeys.has(keyOf(i))):[];}
+function allSpaceItems(){return spaceItems;}
 function filterChanged(){selected=0;limit=60;chosen.clear();anchor=null;render();$('results').scrollTop=0;}
 function toggleSpace(space){const key=keyOf(space);spaceKeys.has(key)?spaceKeys.delete(key):spaceKeys.add(key);filterChanged();}
+function onlySpace(space){spaceKeys.clear();spaceKeys.add(keyOf(space));filterChanged();}
 async function switchSpace(space){try{await rpc('switchWorkspace',{id:space.id,windowId:space.windowId});await dismiss();}catch(e){status(e.message,true);}}
 function clearSpaces(){if(!spaceKeys.size)return;spaceKeys.clear();filterChanged();}
 function initSpaces(){
@@ -76,14 +92,14 @@ const everyPill=node('button','pill every','All spaces');everyPill.type='button'
 function pillFor(space){
   const key=keyOf(space);let pill=pillCache.get(key);
   if(!pill){pill=node('button','pill');pill.type='button';pill.append(node('i','dot'),node('span','pill-name'),node('span','pill-count'));
-    pill.onclick=e=>{if(e.ctrlKey||e.metaKey){switchSpace(pill._space);return;}toggleSpace(pill._space);};
+    // e.detail counts the clicks, so the second one lands as "just this space".
+    pill.onclick=e=>{if(e.ctrlKey||e.metaKey){switchSpace(pill._space);return;}e.detail>1?onlySpace(pill._space):toggleSpace(pill._space);};
     pillCache.set(key,pill);}
   pill._space=space;return pill;
 }
-function renderSpaces(found){
-  const bar=$('spaces'),list=allSpaceItems(),show=workspaceSupported&&list.length>0&&['all','tabs','active'].includes(mode);
+function renderSpaces(counts){
+  const bar=$('spaces'),list=spaceItems,show=workspaceSupported&&list.length>0&&['all','tabs','active'].includes(mode);
   bar.hidden=!show;if(!show)return;
-  const counts=new Map();for(const i of found)if(i.kind==='tabs'&&!i.essential){const k=i.windowId+':'+i.workspaceId;counts.set(k,(counts.get(k)||0)+1);}
   const manyWindows=new Set(list.map(w=>w.windowId)).size>1,wanted=[everyPill];
   everyPill.setAttribute('aria-pressed',String(!spaceKeys.size));
   list.forEach((space,index)=>{
@@ -94,7 +110,8 @@ function renderSpaces(found){
     pill.querySelector('.pill-name').textContent=space.title;
     pill.querySelector('.pill-count').textContent=String(counts.get(space.windowId+':'+space.id) || 0);
     pill.title=[space.title,manyWindows?`Window ${space.windowId}`:'',space.active?'Current space':'',space.containerName?`Container ${space.containerName}`:'',
-      on?'Click to drop from the filter':'Click to add to the filter','Ctrl+click switches to it',index<9?`Alt+Shift+${index+1}`:''].filter(Boolean).join(' · ');
+      on?'Click to drop from the filter':'Click to add to the filter','Double-click for this space alone','Ctrl+click switches to it',
+      index<9?`Alt+Shift+${index+1}`:''].filter(Boolean).join(' · ');
   });
   wanted.forEach((el,index)=>{if(bar.children[index]!==el)bar.insertBefore(el,bar.children[index] || null);});
   for(const [key,pill] of pillCache)if(!list.some(w=>keyOf(w)===key)){pill.remove();pillCache.delete(key);}
@@ -107,7 +124,7 @@ function iconColor(img){
 }
 function applyIcon(row,data){
   if(!data||!/^data:image\//i.test(data)||row._iconData===data)return;
-  row._iconData=data;const box=row.querySelector('.icon'),img=node('img','favicon');img.alt='';img.width=img.height=20;img.decoding='async';
+  row._iconData=data;const box=row._el.icon,img=node('img','favicon');img.alt='';img.width=img.height=20;img.decoding='async';
   img.onload=()=>{if(!row.isConnected)return;const cached=iconCache.get(row._item.url),color=cached?.color||iconColor(img);if(color){row.style.setProperty('--site-rgb',color);if(cached)cached.color=color;}};
   img.onerror=()=>{if(img.parentNode)box.replaceChildren(node('span','',icons[row._item.kind]));};img.src=data;box.replaceChildren(img);
 }
@@ -116,15 +133,16 @@ async function loadIcons(){const urls=[...iconQueue].slice(0,64);urls.forEach(u=
   try{for(const result of await rpc('favicons',{urls})){iconCache.set(result.url,{data:result.data});for(const row of rowCache.values())if(row._item.url===result.url)applyIcon(row,result.data);}while(iconCache.size>256)iconCache.delete(iconCache.keys().next().value);}catch{}
   if(iconQueue.size)iconTimer=setTimeout(loadIcons,0);
 }
-function makeRow(item){
-  const row=node('div','row');row.setAttribute('role','option');row.append(node('span','check','✓'),node('span','icon',icons[item.kind]));
-  const info=node('div','info');info.append(node('div','title'),node('div','subtitle'));row.append(info,node('div','badges'));
-  const actions=node('div','row-actions');
+function blankRow(){
+  const row=node('div','row');row.setAttribute('role','option');
+  const icon=node('span','icon'),info=node('div','info'),title=node('div','title'),subtitle=node('div','subtitle'),badges=node('div','badges');
+  info.append(title,subtitle);row.append(node('span','check','✓'),icon,info,badges);
+  const actions=node('div','row-actions'),el={icon,title,subtitle,badges};
   for(const act of ['pin','unload','close']){const b=node('button','row-btn');b.type='button';b.dataset.act=act;b.append(glyph(act));
-    b.onclick=e=>{e.stopPropagation();rowAction(row._item,act);};actions.append(b);}
+    b.onclick=e=>{e.stopPropagation();rowAction(row._item,act);};actions.append(b);el[act]=b;}
   const menu=node('button','row-btn more','•••');menu.type='button';menu.onclick=e=>{e.stopPropagation();selectForMenu(row._item);showActions(row._item);};
-  actions.append(menu);row.append(actions);
-  row.onclick=e=>{const item=row._item,index=visible.findIndex(i=>keyOf(i)===keyOf(item));
+  actions.append(menu);row.append(actions);el.more=menu;row._el=el;
+  row.onclick=e=>{flushRender();const item=row._item,index=visible.findIndex(i=>keyOf(i)===keyOf(item));
     if(e.shiftKey&&item.kind==='tabs'){selectRange(index);return;}
     if((e.ctrlKey||e.metaKey)&&item.kind==='tabs'){const key=keyOf(item);if(!chosen.size&&current()?.kind==='tabs')chosen.add(keyOf(current()));chosen.has(key)?chosen.delete(key):chosen.add(key);selected=index;anchor=key;render();return;}
     selected=index;chosen.clear();anchor=null;openItem(item).catch(err=>status(err.message,true));
@@ -132,6 +150,8 @@ function makeRow(item){
   row.oncontextmenu=e=>{e.preventDefault();selectForMenu(row._item);showActions(row._item);};
   return row;
 }
+// Rebuilding a row costs a dozen nodes, so evicted rows come back through a pool.
+function takeRow(){const row=rowPool.pop() || blankRow();row._item=null;row._badges=row._actions=row._subtitle=row._iconData=null;return row;}
 // Inline actions follow a multi-selection when the row belongs to it, exactly like the drawer.
 function multiGroup(){
   const list=chosen.size>1?items.filter(i=>i.kind==='tabs'&&chosen.has(keyOf(i))):[];
@@ -139,20 +159,20 @@ function multiGroup(){
   return {size:list.length,allEssential,allIdle,key:[list.length,allEssential,allIdle].join('/')};
 }
 function rowAction(item,act){
-  const index=visible.findIndex(i=>keyOf(i)===keyOf(item));if(index>=0)selected=index;
+  flushRender();const index=visible.findIndex(i=>keyOf(i)===keyOf(item));if(index>=0)selected=index;
   mutate(act==='pin'?(item.pinned?'unpin':'pin'):act,targetsFor(item));
 }
 function renderRows(){
   const list=$('results'),wanted=visible.slice(0,Math.max(limit,selected+1)),keep=new Set(),group=multiGroup();
   wanted.forEach((item,index)=>{
-    const key=keyOf(item);keep.add(key);let row=rowCache.get(key);if(!row){row=makeRow(item);rowCache.set(key,row);}
-    const old=row._item;row._item=item;row.id=`result-${index}`;row.dataset.kind=item.kind;row.dataset.key=key;
+    const key=keyOf(item);keep.add(key);let row=rowCache.get(key);if(!row){row=takeRow();rowCache.set(key,row);}
+    const el=row._el,old=row._item;row._item=item;row.id=`result-${index}`;row.dataset.kind=item.kind;row.dataset.key=key;
     row.classList.toggle('cursor',index===selected);row.classList.toggle('multi',chosen.size>1&&chosen.has(key));row.setAttribute('aria-selected',String(chosen.size?chosen.has(key):index===selected));
-    if(!old||old.url!==item.url){row.style.setProperty('--site-rgb',siteColor(item.url));row._iconData=null;row.querySelector('.icon').textContent=icons[item.kind];iconObserver.observe(row);}
+    if(!old||old.url!==item.url){row.style.setProperty('--site-rgb',siteColor(item.url));row._iconData=null;el.icon.textContent=icons[item.kind];iconObserver.observe(row);}
     const direct=item.favIconUrl;if(direct?.startsWith('data:image/'))applyIcon(row,direct);
-    if(!old||old.title!==item.title)row.querySelector('.title').textContent=item.title;
+    if(!old||old.title!==item.title)el.title.textContent=item.title;
     const subtitle=item.kind==='tabs'?shortURL(item.url):item.subtitle;
-    if(row._subtitle!==subtitle){row.querySelector('.subtitle').textContent=subtitle;row._subtitle=subtitle;}
+    if(row._subtitle!==subtitle){el.subtitle.textContent=subtitle;row._subtitle=subtitle;}
     const badgeKey=[item.active,item.pinned,item.discarded,item.audible,item.essential,item.workspaceName,item.containerName,mode].join(':');
     if(row._badges!==badgeKey){const badges=[];
       if(item.kind==='tabs'){
@@ -162,24 +182,28 @@ function renderRows(){
         if(item.containerName&&item.containerName!==item.workspaceName)badges.push(tagNode(item.containerName,tagColor(item.containerName,item.containerColor),`Container · ${item.containerName}`));
       }
       if(item.active)badges.push(node('span','badge active','Current'));
-      if(item.pinned)badges.push(node('span','badge','Pinned'));if(item.discarded)badges.push(node('span','badge','Unloaded'));if(item.audible)badges.push(node('span','badge','Audio'));
+      if(item.discarded)badges.push(node('span','badge','Unloaded'));if(item.audible)badges.push(node('span','badge','Audio'));
       if(mode==='all'&&item.kind!=='commands')badges.push(node('span','badge kind',{tabs:'Tab',bookmarks:'Bookmark',windows:'Window',workspaces:'Space'}[item.kind]));
-      row.querySelector('.badges').replaceChildren(...badges);row._badges=badgeKey;
+      el.badges.replaceChildren(...badges);row._badges=badgeKey;
     }
-    const menu=row.querySelector('.row-btn.more');menu.hidden=item.kind==='commands';menu.setAttribute('aria-label',`Actions for ${item.title}`);
     const multi=chosen.size>1&&chosen.has(key),actionKey=[item.kind,item.pinned,item.discarded,item.active,item.essential,multi&&group.key].join(':');
     if(row._actions!==actionKey){row._actions=actionKey;
       const isTab=item.kind==='tabs',suffix=multi?` ${group.size} selected tabs`:' tab';
-      for(const b of row.querySelectorAll('.row-btn[data-act]')){const act=b.dataset.act;b.hidden=!isTab;if(!isTab)continue;
-        const label=act==='pin'?(item.pinned?'Unpin':'Pin'):act==='unload'?'Unload':'Close';
-        b.disabled=act==='pin'?(multi?group.allEssential:!!item.essential):act==='unload'?(multi?group.allIdle:!!(item.active||item.discarded)):false;
-        b.classList.toggle('on',act==='pin'&&!!item.pinned);b.classList.toggle('danger',act==='close');
+      el.more.hidden=item.kind==='commands';el.more.setAttribute('aria-label',`Actions for ${item.title}`);
+      // A button that cannot act is not rendered, and the rest close the gap it leaves.
+      // Only a pinned tab keeps its button on show; the others wait for the pointer.
+      for(const act of ['pin','unload','close']){const b=el[act],able=!isTab?false:
+        act==='pin'?(multi?!group.allEssential:!item.essential):
+        act==='unload'?(multi?!group.allIdle:!(item.active||item.discarded)):true;
+        b.hidden=!able;if(!able)continue;
+        const pinned=act==='pin'&&!!item.pinned,label=act==='pin'?(pinned?'Unpin':'Pin'):act==='unload'?'Unload':'Close';
+        b.classList.toggle('on',pinned);b.classList.toggle('reveal',!pinned);b.classList.toggle('danger',act==='close');
         b.title=label+suffix;b.setAttribute('aria-label',label+suffix);
       }
     }
     if(list.children[index]!==row)list.insertBefore(row,list.children[index] || null);
   });
-  for(const [key,row] of rowCache)if(!keep.has(key)){iconObserver.unobserve(row);row.remove();rowCache.delete(key);}
+  for(const [key,row] of rowCache)if(!keep.has(key)){iconObserver.unobserve(row);row.remove();rowCache.delete(key);if(rowPool.length<90)rowPool.push(row);}
   let more=$('more');if(visible.length>wanted.length){if(!more){more=node('button','quiet');more.id='more';more.onclick=()=>{limit+=60;renderRows();};}more.textContent=`Show more · ${visible.length-wanted.length} remaining`;list.append(more);}else more?.remove();
   $('query').setAttribute('aria-activedescendant',visible.length?`result-${selected}`:'');
 }
@@ -191,19 +215,19 @@ function selectRange(index){
 }
 function selectForMenu(item){selected=visible.findIndex(i=>keyOf(i)===keyOf(item));if(!chosen.has(keyOf(item))){chosen.clear();if(item.kind==='tabs')chosen.add(keyOf(item));}render({preserve:true});}
 function setMode(key){mode=key;selected=0;limit=60;chosen.clear();anchor=null;closeSide();render();$('results').scrollTop=0;$('query').focus();}
-async function refresh(){const v=++version;try{const data=await rpc('snapshot');if(v!==version)return;items=[...data.items.map(prepare),...items.filter(i=>i.kind==='bookmarks')];workspaceSupported=data.workspaceSupported;coreReady=true;initSpaces();render({preserve:true});syncSide();}catch(e){status(e.message,true);}}
-async function loadBookmarks(){const v=++bookmarkVersion;try{const data=await rpc('bookmarks');if(v!==bookmarkVersion)return;items=[...items.filter(i=>i.kind!=='bookmarks'),...data.items.map(prepare)];bookmarksReady=true;render({preserve:true});}catch(e){status('Bookmarks: '+e.message,true);}}
+async function refresh(){const v=++version;try{const data=await rpc('snapshot');if(v!==version)return;setItems([...data.items.map(prepare),...items.filter(i=>i.kind==='bookmarks')]);workspaceSupported=data.workspaceSupported;coreReady=true;initSpaces();render({preserve:true});syncSide();}catch(e){status(e.message,true);}}
+async function loadBookmarks(){const v=++bookmarkVersion;try{const data=await rpc('bookmarks');if(v!==bookmarkVersion)return;setItems([...items.filter(i=>i.kind!=='bookmarks'),...data.items.map(prepare)]);bookmarksReady=true;render({preserve:true});}catch(e){status('Bookmarks: '+e.message,true);}}
 function applyDelta(data){
   version++; // An older snapshot must never overwrite a newer unload/pin result.
   const removed=new Set(data.removed || []),updates=new Map((data.updates || []).map(p=>[p.id,p]));
-  items=items.filter(i=>i.kind!=='tabs'||!removed.has(i.id)).map(i=>{
+  setItems(items.filter(i=>i.kind!=='tabs'||!removed.has(i.id)).map(i=>{
     const patch=i.kind==='tabs'&&updates.get(i.id);if(!patch)return i;
     const next={...i,...patch};return ('title' in patch||'url' in patch)?prepare(next):next;
-  });
+  }));
   if(removed.size)updateGroupCounts();render({preserve:true});if(side?.keys?.some(k=>{const i=itemFor(k);return i?.kind==='tabs'&&updates.has(i.id)||!i;}))syncSide();
 }
 function updateGroupCounts(){const counts=new Map(),windowCounts=new Map();for(const i of items)if(i.kind==='tabs'){const k=i.windowId+':'+i.workspaceId;counts.set(k,(counts.get(k)||0)+1);windowCounts.set(i.windowId,(windowCounts.get(i.windowId)||0)+1);}
-  items=items.map(i=>{if(i.kind==='workspaces')return prepare({...i,subtitle:[`${counts.get(i.windowId+':'+i.id)||0} tabs`,`Window ${i.windowId}`,i.containerName&&`Container ${i.containerName}`,i.active&&'Current space'].filter(Boolean).join(' · ')});if(i.kind==='windows')return prepare({...i,subtitle:`Window ${i.id} · ${windowCounts.get(i.id)||0} tabs${i.active?' · Current window':''}`});return i;});
+  setItems(items.map(i=>{if(i.kind==='workspaces')return prepare({...i,subtitle:[`${counts.get(i.windowId+':'+i.id)||0} tabs`,`Window ${i.windowId}`,i.containerName&&`Container ${i.containerName}`,i.active&&'Current space'].filter(Boolean).join(' · ')});if(i.kind==='windows')return prepare({...i,subtitle:`Window ${i.id} · ${windowCounts.get(i.id)||0} tabs${i.active?' · Current window':''}`});return i;}));
 }
 let needsRefresh=false;
 function schedule(){clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{if(busy)needsRefresh=true;else refresh();},80);}
@@ -258,12 +282,15 @@ function drawDetails(){const t=itemFor(side.keys[0]);detail('Tab details');if(!t
 function syncSide(){if(!side||busy)return;const scroll=$('detail').scrollTop,focus=document.activeElement?.dataset.action;if(side.type==='actions')drawActions();else if(side.type==='details')drawDetails();$('detail').scrollTop=scroll;if(focus)$('detail').querySelector(`[data-action="${focus}"]:not(:disabled)`)?.focus();}
 function chooseMove(tab,kind){side={type:'form'};detail(kind==='workspaces'?'Move to workspace':'Move to window');const targets=items.filter(i=>i.kind===kind&&(kind==='workspaces'?i.windowId===tab.windowId&&i.id!==tab.workspaceId:i.id!==tab.windowId));if(!targets.length)$('detail').append(node('p','','No other destinations available.'));for(const t of targets)addAction(t.title,()=>perform(kind==='workspaces'?'moveWorkspace':'moveWindow',{tabId:tab.id,id:t.id},'Tab moved.'));addAction('Back',()=>showActions(tab));focusAction();}
 function editBookmark(item){side={type:'form'};detail('Edit bookmark');const name=node('input'),url=node('input');name.id='edit-title';url.id='edit-url';name.value=item.title;url.value=item.url;const a=node('label','','Title'),b=node('label','','URL');a.htmlFor=name.id;b.htmlFor=url.id;$('detail').append(a,name,b,url);addAction('Save bookmark',()=>perform('editBookmark',{id:item.id,title:name.value,url:url.value},'Bookmark updated.'));addAction('Cancel',()=>showActions(item));name.focus();}
-function showHelp(){side={type:'help'};detail('Keyboard guide');for(const text of ['Tabs opens by default. Type to fuzzy-search; each mode shows its matching count. Results stay in last-used order.','Alt+1 All · 2 Tabs · 3 Bookmarks · 4 Windows · 5 Active. Active includes every loaded tab.','Spaces are the colour-coded pills under the modes, shown for All, Tabs and Active. Click one to filter by it, click more to widen the filter, click again to drop it. The current space is picked for you when the palette opens.','Ctrl+click a space pill to switch the browser to that space. Alt+Shift+1…9 toggles a pill, Alt+0 clears the filter, and the chip beside the counts clears it too.','Each tab row tags its space, or its container, in that space\u2019s colour. Shared Essentials are tagged as such and stay visible in every filter.','Every row carries pin, unload and close buttons; with several tabs selected they act on the whole selection.','↑ / ↓ navigate. Shift + ↑ / ↓ extends or shrinks a range of selected tabs. Ctrl-click toggles a tab; Shift-click selects a range.','Right-click, •••, or Ctrl+K opens actions on the right. Pin, unpin, unload or close multiple selected tabs together.','Ctrl+Enter on a single tab opens its details without switching or reloading it. Enter switches to the tab. Ctrl+Enter on a bookmark opens it in the background.','Commands are optional: > pin, > unpin, > unload, > close, > move, > bookmark, > restore.','Unloading never activates a tab. Current tabs are skipped. In Active mode, unloaded tabs disappear because they are no longer loaded. Your search and scroll position are retained.'])$('detail').append(node('p','',text));}
+function showHelp(){side={type:'help'};detail('Keyboard guide');for(const text of ['Tabs opens by default. Type to fuzzy-search; each mode shows its matching count. Results stay in last-used order.','Alt+1 All · 2 Tabs · 3 Bookmarks · 4 Windows · 5 Active. Active includes every loaded tab.','Spaces are the colour-coded pills under the modes, shown for All, Tabs and Active. Click one to filter by it, click more to widen the filter, click again to drop it. The current space is picked for you when the palette opens.','Double-click a pill to narrow to that space alone. Ctrl+click switches the browser to that space. Alt+Shift+1…9 toggles a pill and Alt+0 clears the filter.','Each tab row tags its space, or its container, in that space\u2019s colour. Shared Essentials are tagged as such and stay visible in every filter.','A pinned tab always shows its pin. The other buttons — pin, unload, close — appear on the row under the pointer or the cursor, and a button that cannot act is left out instead of greyed out.','↑ / ↓ navigate. Shift + ↑ / ↓ extends or shrinks a range of selected tabs. Ctrl-click toggles a tab; Shift-click selects a range.','Right-click, •••, or Ctrl+K opens actions on the right. Pin, unpin, unload or close multiple selected tabs together.','Ctrl+Enter on a single tab opens its details without switching or reloading it. Enter switches to the tab. Ctrl+Enter on a bookmark opens it in the background.','Commands are optional: > pin, > unpin, > unload, > close, > move, > bookmark, > restore.','Unloading never activates a tab. Current tabs are skipped. In Active mode, unloaded tabs disappear because they are no longer loaded. Your search and scroll position are retained.'])$('detail').append(node('p','',text));}
 function cmd(id,title,run){return prepare({kind:'commands',id,title,subtitle:'Command · Enter to run',run});}
 function commands(){const t=commandTarget || current(),targets=t?.kind==='tabs'?targetsFor(t):[];const list=[cmd('help','Help — keyboard shortcuts',showHelp),cmd('bookmark','Bookmark current page',()=>perform('bookmarkCurrent',{},'Bookmark saved.')),cmd('unload-others','Unload other tabs',()=>perform('unloadOthers',{},'Other eligible tabs unloaded.')),cmd('restore','Restore last closed tab',()=>perform('restore',{},'Restored.'))];if(t?.kind==='tabs'){for(const [action,label] of [['pin','Pin'],['unpin','Unpin'],['unload','Unload'],['close','Close']])list.unshift(cmd(action,`${label} — ${targets.length>1?targets.length+' tabs':t.title}`,()=>mutate(action,targets)));list.push(cmd('details',`Details — ${t.title}`,()=>showDetails(t)));}for(const w of items.filter(i=>i.kind==='workspaces')){list.push(cmd('switch:'+w.windowId+':'+w.id,`Switch workspace ${w.title}`,async()=>{await rpc('switchWorkspace',{id:w.id,windowId:w.windowId});await dismiss();}));if(t?.kind==='tabs'&&!t.essential&&w.windowId===t.windowId&&w.id!==t.workspaceId)list.push(cmd('move:'+w.id,`Move to workspace ${w.title}`,()=>perform('moveWorkspace',{tabId:t.id,id:w.id},'Tab moved.')));}return list;}
-$('query').addEventListener('input',()=>{if($('query').value.trimStart().startsWith('>')){if(!commandTarget)commandTarget=current()?.kind==='tabs'?current():items.find(i=>i.kind==='tabs'&&i.active);}else commandTarget=null;chosen.clear();anchor=null;selected=0;limit=60;closeSide();status('');render();$('results').scrollTop=0;});
-$('scope').onclick=()=>{clearSpaces();$('query').focus();};$('close').onclick=dismiss;$('help').onclick=showHelp;
+$('query').addEventListener('input',()=>{if($('query').value.trimStart().startsWith('>')){if(!commandTarget)commandTarget=current()?.kind==='tabs'?current():items.find(i=>i.kind==='tabs'&&i.active);}else commandTarget=null;chosen.clear();anchor=null;selected=0;limit=60;closeSide();status('');scheduleRender(true);});
+$('close').onclick=dismiss;$('help').onclick=showHelp;
 document.addEventListener('keydown',e=>{
+  // Typing and backspacing never read the list, so they keep their coalesced render.
+  const editing=e.target===$('query')&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key.length===1||e.key==='Backspace'||e.key==='Delete');
+  if(!editing)flushRender();
   if(e.altKey&&e.shiftKey&&/^Digit[1-9]$/.test(e.code)){e.preventDefault();const space=allSpaceItems()[Number(e.code.slice(5))-1];if(space)toggleSpace(space);return;}
   if(e.altKey&&e.code==='Digit0'){e.preventDefault();clearSpaces();return;}
   if(e.altKey&&!e.shiftKey&&/^[1-5]$/.test(e.key)){e.preventDefault();setMode(modes[Number(e.key)-1][0]);return;}
@@ -280,9 +307,9 @@ const livePort=browser.runtime.connect({name:'zen-glass-panel'});
 livePort.onMessage.addListener(m=>{
   if(m.type==='delta'){if(coreReady)queueDelta(m);else schedule();}
   else if(m.type==='bookmarksChanged')loadBookmarks();
-  else if(m.type==='activated'){if(coreReady)version++;items=items.map(i=>i.kind==='tabs'&&i.windowId===m.windowId?{...i,active:i.id===m.tabId,lastUsed:i.id===m.tabId?m.time:i.lastUsed}:i);render({preserve:true});syncSide();}
-  else if(m.type==='windowFocused'){items=items.map(i=>i.kind==='windows'?{...i,active:i.id===m.id,lastUsed:i.id===m.id?m.time:i.lastUsed}:i);render({preserve:true});}
+  else if(m.type==='activated'){if(coreReady)version++;setItems(items.map(i=>i.kind==='tabs'&&i.windowId===m.windowId?{...i,active:i.id===m.tabId,lastUsed:i.id===m.tabId?m.time:i.lastUsed}:i));render({preserve:true});syncSide();}
+  else if(m.type==='windowFocused'){setItems(items.map(i=>i.kind==='windows'?{...i,active:i.id===m.id,lastUsed:i.id===m.id?m.time:i.lastUsed}:i));render({preserve:true});}
   else if(m.type==='changed')schedule();
 });
-window.addEventListener('unload',()=>{clearTimeout(refreshTimer);clearTimeout(iconTimer);clearTimeout(deltaTimer);iconObserver.disconnect();livePort.disconnect();});
+window.addEventListener('unload',()=>{clearTimeout(refreshTimer);clearTimeout(iconTimer);clearTimeout(deltaTimer);if(frameHandle)cancelAnimationFrame(frameHandle);iconObserver.disconnect();livePort.disconnect();});
 render();refresh().then(loadBookmarks);$('query').focus();

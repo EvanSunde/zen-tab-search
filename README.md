@@ -37,7 +37,7 @@ Type naturally. There is no need to prefix a search with “tabs” or “bookma
 - **Tab / Shift+Tab:** Navigate controls
 - **Escape:** Back out of actions; otherwise close
 
-Every tab row carries pin/unpin, unload and close buttons, with the three-dot menu beside them for the rest. A button acts on the whole selection when its row is part of one, and it is greyed out when it cannot apply — unload on the current or an already unloaded tab, pin on an Essential. The three-dot menu, right-click, and Ctrl+K open the same actions in the drawer.
+Tab rows carry their own pin/unpin, unload and close buttons. A pinned tab always shows its pin, so the icon doubles as the pinned marker; every other button appears on the row under the pointer or the keyboard cursor. A button that cannot act is left out rather than greyed out — no unload on the current or an already unloaded tab, no pin on an Essential — and the remaining buttons close the gap instead of holding an empty slot. A button acts on the whole selection when its row is part of one. The three-dot menu, right-click, and Ctrl+K still open the full actions in the drawer.
 
 Tabs can be pinned/unpinned, unloaded, closed, and moved between windows or workspaces. Active tabs must be switched away from before unloading. A tab marked “Unloaded” remains in the browser and reloads when selected. The unload action verifies that Zen actually discarded it.
 
@@ -48,9 +48,10 @@ Bookmarks can be opened, opened in the background, edited, or deleted. Bookmark 
 Spaces are not a separate mode. They are colour-coded pills below the mode row, shown for All, Tabs, and Active:
 
 - **Click** a pill to filter tabs by that space. Click further pills to widen the filter; click a lit pill to drop it again.
+- **Double-click** a pill to narrow to that space alone, whatever else was lit.
 - **Ctrl+click** a pill to switch the browser to that space.
-- The current space is selected when the palette opens, so you start inside the space you are already in. **All spaces**, the chip beside the result count, or Alt+0 clears the filter.
-- Pill counts follow whatever you have typed. A ring around a pill's dot marks the space the browser is showing now, and a space's own Zen icon replaces the dot when it has one.
+- The current space is selected when the palette opens, so you start inside the space you are already in. **All spaces** or Alt+0 clears the filter. The pills are the only readout of the filter; nothing repeats it below.
+- Pills keep the browser's own space order. Counts follow whatever you have typed, a ring around a pill's dot marks the space the browser is showing now, and a space's own Zen icon replaces the dot when it has one.
 
 Each tab row tags its space in that space's colour, so a widened filter still reads at a glance. Where a space or a tab uses a Firefox container, the tag carries the container's own name and colour; a space named after its container is tagged once, not twice. Zen's shared Essentials are tagged as such and stay visible under every space filter. Colours come from the container when there is one, and are otherwise derived from the space's identity, so they do not shift between sessions.
 
@@ -77,6 +78,8 @@ Start with `>` to search actions. Examples:
 The overlay uses a translucent glass surface, bounded backdrop blur, readable text contrast, and dark/light themes following your system setting. It respects reduced motion. No screenshots of tabs, remote favicon fetching, external fonts, telemetry, or network search are used.
 
 The interface is injected on demand and removed on close. The background page is nonpersistent. Browser events update the open panel; there is no polling loop. Bookmark data is cached until it changes. Results render in batches of 60. Local last-use storage is capped at 2,000 entries.
+
+Typing is kept off the critical path: records are held in display order so a keystroke filters without re-sorting, each record carries its word list so the typo pass never re-splits text, one pass over the results feeds the mode counts, the pill counts and the list, redraws are coalesced to one per frame, and row elements are reused from a pool. A key or click that reads the list redraws first, so nothing acts on a stale result.
 
 Tab recency uses the browser's `lastAccessed` value. Window/workspace recency combines observed use and tab recency. Bookmark recency starts accumulating after installation; historical browsing history is neither requested nor read. Private tab visits are not persisted. Uninstalling removes extension-owned local recency data.
 
