@@ -1,0 +1,74 @@
+[
+  {
+    "namespace": "zenGlass",
+    "functions": [
+      {
+        "name": "snapshot",
+        "type": "function",
+        "async": true,
+        "parameters": [],
+        "returns": {
+          "type": "any"
+        }
+      },
+      {
+        "name": "activate",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "tabId",
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "name": "switchWorkspace",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "windowId",
+            "type": "integer"
+          },
+          {
+            "name": "workspaceId",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "name": "moveToWorkspace",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "tabId",
+            "type": "integer"
+          },
+          {
+            "name": "workspaceId",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "name": "favicons",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "urls",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ],
+        "returns": {
+          "type": "any"
+        }
+      }
+    ]
+  }
+]
