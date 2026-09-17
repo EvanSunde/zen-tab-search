@@ -1,6 +1,6 @@
 # Zen Glass
 
-A small, local command palette for Zen Browser. Press **Ctrl + Shift + Space** to search tabs, bookmarks, browser windows, and real Zen workspaces together.
+A small, local command palette for Zen Browser. Press **Ctrl + Shift + Space** to search tabs, bookmarks, and browser windows together, filtered by your real Zen spaces.
 
 ## Installation — Zen edition
 
@@ -10,7 +10,7 @@ This edition uses a narrow Firefox Experiment API for actual Zen workspaces. It 
 2. Set `extensions.experiments.enabled` to `true`.
 3. Set `xpinstall.signatures.required` to `false`.
 4. Restart Zen if needed.
-5. Open `about:addons`, choose the gear menu → **Install Add-on From File**, and select `zen-glass-1.0.0.xpi`.
+5. Open `about:addons`, choose the gear menu → **Install Add-on From File**, and select `zen-glass-1.2.0.xpi`.
 6. Press **Ctrl + Shift + Space** on a website.
 
 These settings permit unsigned, privileged extensions. Only install packages you trust. Installation and settings changes are left to you; the build does not change your existing browser profile. No native companion application is required.
@@ -27,20 +27,34 @@ Type naturally. There is no need to prefix a search with “tabs” or “bookma
 - **Alt+2:** Tabs
 - **Alt+3:** Bookmarks
 - **Alt+4:** Windows
-- **Alt+5:** Spaces
-- **Alt+6:** Active tabs (selected tabs in each window, distinct from loaded tabs)
+- **Alt+5:** Active tabs (selected tabs in each window, distinct from loaded tabs)
+- **Alt+Shift+1 … 9:** Add or drop that space pill
+- **Alt+0:** Clear the space filter
 - **↑ / ↓, Page Up / Page Down:** Select a result
-- **Enter:** Open or switch; choosing a workspace searches only its tabs
+- **Enter:** Open or switch
 - **Ctrl+Enter:** Open a bookmark in the background
 - **Ctrl+K:** Actions for the selected result
 - **Tab / Shift+Tab:** Navigate controls
-- **Escape:** Back out of actions or workspace scope; otherwise close
+- **Escape:** Back out of actions; otherwise close
 
-The three-dot menu provides the same actions as the keyboard menu. Workspace actions include switching directly to that workspace. Shared Essentials appear in scoped workspace searches.
+Every tab row carries pin/unpin, unload and close buttons, with the three-dot menu beside them for the rest. A button acts on the whole selection when its row is part of one, and it is greyed out when it cannot apply — unload on the current or an already unloaded tab, pin on an Essential. The three-dot menu, right-click, and Ctrl+K open the same actions in the drawer.
 
 Tabs can be pinned/unpinned, unloaded, closed, and moved between windows or workspaces. Active tabs must be switched away from before unloading. A tab marked “Unloaded” remains in the browser and reloads when selected. The unload action verifies that Zen actually discarded it.
 
 Bookmarks can be opened, opened in the background, edited, or deleted. Bookmark deletion has an explicit confirmation. `> bookmark` saves the current page.
+
+## Spaces and containers
+
+Spaces are not a separate mode. They are colour-coded pills below the mode row, shown for All, Tabs, and Active:
+
+- **Click** a pill to filter tabs by that space. Click further pills to widen the filter; click a lit pill to drop it again.
+- **Ctrl+click** a pill to switch the browser to that space.
+- The current space is selected when the palette opens, so you start inside the space you are already in. **All spaces**, the chip beside the result count, or Alt+0 clears the filter.
+- Pill counts follow whatever you have typed. A ring around a pill's dot marks the space the browser is showing now, and a space's own Zen icon replaces the dot when it has one.
+
+Each tab row tags its space in that space's colour, so a widened filter still reads at a glance. Where a space or a tab uses a Firefox container, the tag carries the container's own name and colour; a space named after its container is tagged once, not twice. Zen's shared Essentials are tagged as such and stay visible under every space filter. Colours come from the container when there is one, and are otherwise derived from the space's identity, so they do not shift between sessions.
+
+Bookmarks and windows belong to no space, so a space filter never hides them.
 
 ## Optional commands
 
@@ -56,7 +70,7 @@ Start with `>` to search actions. Examples:
 - `> restore`
 - `> help`
 
-Tab commands apply to the tab selected before entering command mode. The command title shows its target. Commands run only on Enter. “Unload other tabs” operates in the current window and skips active, audible, pinned, and Essential tabs. Restore reopens the browser's most recently closed session item, which may be a window.
+`> switch workspace` and `> move workspace` still cover every space from the keyboard. Tab commands apply to the tab selected before entering command mode. The command title shows its target. Commands run only on Enter. “Unload other tabs” operates in the current window and skips active, audible, pinned, and Essential tabs. Restore reopens the browser's most recently closed session item, which may be a window.
 
 ## Visuals and resource use
 
@@ -72,7 +86,9 @@ Built against and integration-tested with **Zen 1.22.1b / Firefox 155.0.1 on Lin
 
 The requested shortcut opens an overlay on ordinary pages. Protected pages (for example `about:config` and restricted Mozilla pages) use a toolbar popup fallback because extension content scripts cannot run there. The toolbar icon opens the popup directly.
 
-The palette searches within your current browser profile and only windows the extension is allowed to access. Workspace names can repeat across windows; scopes and actions retain both identifiers. Essentials are shared and cannot be moved to another workspace. Browser-protected or busy tabs can refuse unloading; the palette reports that instead of claiming success.
+Container names and colours are read through the contextual identities API. Without that permission, or with containers turned off, tags fall back to generated colours and nothing else changes.
+
+The palette searches within your current browser profile and only windows the extension is allowed to access. Workspace names can repeat across windows; space filters and actions retain both identifiers. Essentials are shared and cannot be moved to another workspace. Browser-protected or busy tabs can refuse unloading; the palette reports that instead of claiming success.
 
 Opening a bookmark supports HTTP, HTTPS, FTP, and file URLs, subject to browser restrictions. Script bookmarks are not executed.
 
@@ -80,8 +96,8 @@ Opening a bookmark supports HTTP, HTTPS, FTP, and file URLs, subject to browser 
 
 No build step and no runtime dependencies. The packaged JavaScript, HTML, and CSS are the source.
 
-Run the pure search tests with:
+Run the pure search tests, including the space-filter cases, with:
 
     node --test tests/search.test.cjs
 
-See `TESTING.md` for the verified native-browser and interface checks. The Experiment API is contained in `experiments/api.js`; it exposes only snapshot, tab activation, workspace switching, and moving a tab into a workspace.
+See `TESTING.md` for the verified native-browser and interface checks. The Experiment API is contained in `experiments/api.js`; it exposes only snapshot, favicon lookup, tab activation, workspace switching, and moving a tab into a workspace.

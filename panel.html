@@ -2,12 +2,13 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zen Glass</title><link rel="stylesheet" href="panel.css"></head>
 <body><main class="palette">
 <header><div class="brand"><span class="logo">z</span><span>ZEN <b>GLASS</b></span><span class="orb"></span></div><button id="close" class="quiet" aria-label="Close palette">esc</button></header>
-<div class="search-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="query" type="text" autocomplete="off" spellcheck="false" placeholder="Find your next thought…" aria-label="Search tabs, bookmarks, windows and workspaces" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="results"><span class="search-key">⌘</span></div>
+<div class="search-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="query" type="text" autocomplete="off" spellcheck="false" placeholder="Find your next thought…" aria-label="Search tabs, bookmarks and windows, filtered by the space pills below" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="results"><span class="search-key">⌘</span></div>
 <nav id="modes" aria-label="Search modes"></nav>
+<div id="spaces" role="group" aria-label="Filter by space" hidden></div>
 <div class="context"><button id="scope" hidden></button><span id="summary">Gathering your spaces…</span><span class="sort">↘ Last used</span></div>
 <div class="content"><div class="list-area"><div id="results" role="listbox" aria-label="Search results" aria-multiselectable="true"></div>
 <div id="empty" hidden><span class="empty-icon">⌕</span><h2>No matches yet</h2><p>Try a shorter name, a domain, or another mode.</p></div>
 </div><aside id="detail" hidden aria-label="Tab actions and details"></aside></div>
 <div id="status" role="status" aria-live="polite"></div>
-<footer><span><kbd>↑</kbd><kbd>↓</kbd> navigate <kbd>↵</kbd> open <kbd>shift ↑↓</kbd> select <kbd>ctrl ↵</kbd> details</span><button id="help" class="quiet">? Help</button></footer>
+<footer><span><kbd>↑</kbd><kbd>↓</kbd> navigate <kbd>↵</kbd> open <kbd>shift ↑↓</kbd> select <kbd>ctrl ↵</kbd> details <kbd>ctrl click</kbd> switch space</span><button id="help" class="quiet">? Help</button></footer>
 </main><script src="search.js"></script><script src="panel.js"></script></body></html>

@@ -1,12 +1,13 @@
 {
   "manifest_version": 2,
   "name": "Zen Glass",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A lightweight frosted-glass palette for tabs, bookmarks, windows and Zen workspaces.",
   "permissions": [
     "tabs",
     "activeTab",
     "bookmarks",
+    "contextualIdentities",
     "storage",
     "sessions"
   ],

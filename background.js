@@ -1,6 +1,6 @@
 'use strict';
 const recentKey='recent-v1';
-let statePromise,bookmarkCache,coreCache,coreFlight,revision=0,saveTimer;
+let statePromise,bookmarkCache,coreCache,coreFlight,containerCache,revision=0,saveTimer;
 const panels=new Set(),iconCache=new Map();
 const state=()=>statePromise ||= browser.storage.local.get(recentKey).then(x=>x[recentKey] || {});
 function dirty(){revision++;coreCache=null;}
@@ -32,6 +32,15 @@ async function bookmarks(){
   const [list,recent]=await Promise.all([bookmarkCache,state()]);
   return {items:list.map(b=>({...b,lastUsed:recent['url:'+b.url] || 0}))};
 }
+// Container identities are optional: without the permission, or with containers
+// turned off, spaces and tabs simply fall back to generated colours.
+async function containers(){
+  if(containerCache)return containerCache;
+  if(!browser.contextualIdentities)return containerCache=new Map();
+  try{const list=await browser.contextualIdentities.query({});containerCache=new Map(list.map(c=>[c.cookieStoreId,{name:c.name || '',color:c.colorCode || c.color || ''}]));}
+  catch{containerCache=new Map();}
+  return containerCache;
+}
 async function snapshot(){
   if(coreCache)return coreCache;
   if(coreFlight){const pending=coreFlight;await pending;if(coreCache)return coreCache;}
@@ -40,18 +49,21 @@ async function snapshot(){
     let data;
     if(browser.zenGlass)data=await browser.zenGlass.snapshot();
     else {const windows=await browser.windows.getAll({populate:true,windowTypes:['normal']});data={windows,tabs:windows.flatMap(w=>w.tabs || []),workspaces:[],supported:false};}
-    const recent=await state(),groups=new Map(),byWindow=new Map(),spaces=new Map(data.workspaces.map(w=>[w.windowId+':'+w.id,w]));
+    const recent=await state(),ids=await containers(),groups=new Map(),byWindow=new Map();
+    const spaces=new Map(data.workspaces.map(w=>{const c=w.containerTabId?ids.get('firefox-container-'+w.containerTabId):null;
+      return [w.windowId+':'+w.id,{...w,color:c?.color || '',containerName:c?.name || ''}];}));
     const items=data.tabs.map(t=>{
-      const key=t.windowId+':'+t.workspaceId,w=spaces.get(key);
+      const key=t.windowId+':'+t.workspaceId,w=spaces.get(key),c=t.cookieStoreId&&t.cookieStoreId!=='firefox-default'?ids.get(t.cookieStoreId):null;
       if(!groups.has(key))groups.set(key,[]);groups.get(key).push(t);
       if(!byWindow.has(t.windowId))byWindow.set(t.windowId,[]);byWindow.get(t.windowId).push(t);
-      return {...t,kind:'tabs',title:t.title || t.url || 'Untitled tab',workspaceName:w?.name || '',lastUsed:t.lastAccessed || 0,subtitle:[t.url,w?.name].filter(Boolean).join(' · ')};
+      return {...t,kind:'tabs',title:t.title || t.url || 'Untitled tab',workspaceName:w?.name || '',workspaceColor:w?.color || '',workspaceIcon:w?.icon || '',
+        containerName:c?.name || '',containerColor:c?.color || '',lastUsed:t.lastAccessed || 0,subtitle:[t.url,w?.name,c?.name].filter(Boolean).join(' · ')};
     });
     for(const w of data.windows){const own=byWindow.get(w.id)||[],active=own.find(t=>t.active);
       items.push({kind:'windows',id:w.id,windowId:w.id,title:active?.title || 'Browser window',subtitle:`Window ${w.id} · ${own.length} tabs${w.focused?' · Current window':''}`,url:own.map(t=>t.title+' '+t.url).join(' '),lastUsed:recent['window:'+w.id] || Math.max(0,...own.map(t=>t.lastAccessed||0)),active:w.focused});
     }
-    for(const w of data.workspaces){const own=groups.get(w.windowId+':'+w.id)||[];
-      items.push({...w,kind:'workspaces',title:w.name,subtitle:`${own.length} tabs · Window ${w.windowId}${w.active?' · Current workspace':''}`,lastUsed:Math.max(recent['workspace:'+w.id] || 0,...own.map(t=>t.lastAccessed||0))});
+    for(const w of spaces.values()){const own=groups.get(w.windowId+':'+w.id)||[];
+      items.push({...w,kind:'workspaces',title:w.name,subtitle:[`${own.length} tabs`,`Window ${w.windowId}`,w.containerName&&`Container ${w.containerName}`,w.active&&'Current space'].filter(Boolean).join(' · '),lastUsed:Math.max(recent['workspace:'+w.id] || 0,...own.map(t=>t.lastAccessed||0))});
     }
     const result={items,workspaceSupported:data.supported};if(serial===revision)coreCache=result;return result;
   })();
@@ -131,5 +143,6 @@ browser.tabs.onActivated.addListener(async ({tabId,windowId})=>{
 for(const event of [browser.tabs.onCreated,browser.tabs.onAttached,browser.tabs.onDetached,browser.windows.onCreated,browser.windows.onRemoved])event.addListener(()=>{dirty();publish({type:'changed'});});
 browser.windows.onFocusChanged.addListener(async id=>{dirty();if(id<0)return;publish({type:'windowFocused',id,time:Date.now()});try{const w=await browser.windows.get(id);if(!w.incognito)await touch('window:'+id);}catch{}});
 for(const event of [browser.bookmarks.onCreated,browser.bookmarks.onRemoved,browser.bookmarks.onChanged,browser.bookmarks.onMoved])event.addListener(()=>{bookmarkCache=null;publish({type:'bookmarksChanged'});});
+for(const event of [browser.contextualIdentities?.onCreated,browser.contextualIdentities?.onUpdated,browser.contextualIdentities?.onRemoved])event?.addListener(()=>{containerCache=null;dirty();publish({type:'changed'});});
 
 browser.tabs.onMoved.addListener((id,info)=>{dirty();publish({type:"delta",updates:[{id,index:info.toIndex}]});});

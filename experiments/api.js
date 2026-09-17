@@ -20,13 +20,16 @@ this.zenGlass = class extends ExtensionCommon.ExtensionAPI {
           windows.push({id:windowId,focused:Services.focus.activeWindow===win});
           const spaces = manager?.getWorkspaces?.() || [];
           supported ||= !!manager;
-          for (const w of spaces) workspaces.push({id:w.uuid, name:w.name || "Workspace", windowId, active:manager.activeWorkspace === w.uuid});
+          for (const w of spaces) workspaces.push({id:w.uuid, name:w.name || "Workspace", icon:w.icon || "", containerTabId:w.containerTabId || 0,
+            windowId, active:manager.activeWorkspace === w.uuid});
           const nativeTabs = manager?.allStoredTabs || win.gBrowser.tabs;
           for (const t of nativeTabs) {
             if (t.closing || t.hasAttribute("zen-empty-tab")) continue;
             // Avoid convert(): it also reads frame loaders, sharing state and other
             // expensive fields the palette never displays. These getters do not load tabs.
+            const userContext = t.getAttribute("usercontextid");
             tabs.push({id:ext.tabManager.getWrapper(t).id,windowId,
+              cookieStoreId:userContext && userContext !== "0" ? "firefox-container-" + userContext : "firefox-default",
               title:t.label || '',url:t.linkedBrowser?.currentURI?.spec || '',
               favIconUrl:win.gBrowser.getIcon(t) || '',active:!!t.selected,pinned:!!t.pinned,
               discarded:!t.linkedPanel,audible:!!t.soundPlaying,
