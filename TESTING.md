@@ -78,7 +78,11 @@ These are throttled headless Chromium numbers on fixture data, not Zen measureme
 
 ## Packaging
 
-`./build.sh` was run in both of its paths, with `zip` and with the `python3` fallback. Each produced a valid archive with `manifest.json` at the root, the `experiments/` folder intact, and the manifest version matching the filename. The archive was not installed into a browser from here.
+`./build.sh` was run in both of its paths, with `zip` and with the `python3` fallback. Each produced a valid archive with `manifest.json` at the root, the `experiments/` folder intact, and the manifest version matching the filename.
+
+`./build.sh --lite` was checked the same way: the archive holds eight files with no `experiments/` folder, its manifest carries no `experiment_apis` key and a separate add-on id, and its version matches the full build. The panel behaves as it does whenever the Experiment API is absent, which the fixture run above already covers: the pill bar stays hidden, tabs, bookmarks and windows still list, and nothing throws.
+
+Neither archive was installed into a browser from here.
 
 A live Zen run is still needed for real container identities, real workspace icons, Ctrl+click and Alt+Enter actually switching the browser, installing the packaged `.xpi`, and confirming that Alt+B and Alt+T are not taken by the Firefox menu bar.
 

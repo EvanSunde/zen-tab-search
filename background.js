@@ -120,7 +120,7 @@ async function handle(m,sender){
     case 'deleteBookmark':await browser.bookmarks.remove(m.id);return {};
     case 'focusWindow':await browser.windows.update(m.id,{focused:true});return {};
     case 'switchWorkspace':if(!browser.zenGlass)throw new Error('Zen workspace integration is unavailable.');await browser.zenGlass.switchWorkspace(m.windowId,m.id);dirty();publish({type:'changed'});return {};
-    case 'moveWorkspace':await browser.zenGlass.moveToWorkspace(m.tabId,m.id);dirty();publish({type:'changed'});return {};
+    case 'moveWorkspace':if(!browser.zenGlass)throw new Error('Zen workspace integration is unavailable.');await browser.zenGlass.moveToWorkspace(m.tabId,m.id);dirty();publish({type:'changed'});return {};
     case 'moveWindow':await browser.tabs.move(m.tabId,{windowId:m.id,index:-1});return {};
     case 'restore':await browser.sessions.restore();return {};
     default:throw new Error('Unknown action.');

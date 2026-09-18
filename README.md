@@ -10,7 +10,7 @@ This edition uses a narrow Firefox Experiment API for actual Zen workspaces. It 
 
         ./build.sh
 
-   It writes `zen-glass-<version>.xpi` next to the sources — a plain zip with `manifest.json` at its root. The script needs a shell and either `zip` or `python3`, and there is nothing to install first.
+   It writes `zen-glass-<version>.xpi` next to the sources — a plain zip with `manifest.json` at its root. The script needs a shell and either `zip` or `python3`, and there is nothing to install first. `./build.sh --lite` builds the same palette without the Experiment API, for a browser that refuses privileged add-ons; see the troubleshooting note below.
 2. Open `about:config` in Zen.
 3. Set `extensions.experiments.enabled` to `true`.
 4. Set `xpinstall.signatures.required` to `false`.
@@ -21,6 +21,20 @@ This edition uses a narrow Firefox Experiment API for actual Zen workspaces. It 
 These settings permit unsigned, privileged extensions. Only install packages you trust. Installation and settings changes are left to you; the build does not change your existing browser profile. No native companion application is required.
 
 If the install is refused as unsigned, that build enforces signatures regardless of the pref — ordinary release Firefox does, and some Zen builds may. Nothing in the package can work around that; the temporary installation below is then the only route, as an add-on signed for general distribution cannot carry an Experiment API.
+
+### “Using 'experiment_apis' requires a privileged add-on”
+
+The browser is refusing to grant the Experiment API, so the add-on will not load at all — packaged or temporary. This is a decision the browser makes before any of this code runs, and no change to the extension can override it. Check, in order:
+
+1. `about:config`: `extensions.experiments.enabled` is still `true` and `xpinstall.signatures.required` is still `false`. Restart Zen after setting either — the values are read when the add-on manager starts, not when you load the add-on.
+2. `about:profiles`: you are running the profile those preferences were set in.
+3. `about:support`: whether the version changed since it last worked. Firefox only honours `extensions.experiments.enabled` in builds that do not require signing, which is why this works in Nightly, Developer Edition, and unbranded or community builds. An update that moves the browser onto a signing-required build turns the preference into a no-op, and no preference will bring it back.
+
+If the preference no longer has any effect, build without the Experiment API:
+
+    ./build.sh --lite
+
+That drops `experiment_apis` from the manifest and builds `zen-glass-<version>-lite.xpi` plus a loadable `build/lite/` folder. Any build accepts it. Tabs, bookmarks, windows, search, pin, unload, close, the actions drawer, and every keyboard shortcut still work; Zen spaces and page favicons do not, so the space pills stay hidden and rows fall back to their kind glyph. It carries its own add-on id, so it can sit beside the full build.
 
 For a temporary development installation, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select this folder's `manifest.json` after enabling Experiment APIs. Temporary installations disappear when Zen exits, which the packaged install above avoids.
 
